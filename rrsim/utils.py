@@ -1,36 +1,17 @@
-#sewer report utils
-#sys.path.append(r'C:\Data\Code\SewerReport\python')
-from flask import url_for
 import pandas as pd
 import numpy as np
-import pygal
-from pygal.style import Style
 from datetime import datetime
-from datetime import timedelta
-APPLICATION_ROOT = "http://127.0.0.1:5000"
-#constaints
-cohortmap = [
-    {'material':'Brick', 'abbrevs':['BMP'], 'lifespan':150, 'stand_dev':10},
-    {'material':'Concrete', 'abbrevs':['RCP', 'RCPP', 'CC', 'PCC'], 'lifespan':150, 'stand_dev':10},
-    {'material':'Clay', 'abbrevs':['VCP','TCP'], 'lifespan':150, 'stand_dev':10},
-    {'material':'Metal', 'abbrevs':['CI', 'CMP', 'DI', 'STL'], 'lifespan':150, 'stand_dev':10},
-    {'material':'Polymer', 'abbrevs':['PPVC', 'PVC', 'HDPE'], 'lifespan':150, 'stand_dev':10},
-    {'material':'Unkown/Other', 'abbrevs':['UNK','WD', 'POR'], 'lifespan':150, 'stand_dev':10},
-    #{'material':'Other', 'abbrevs':['WD', 'POR']},
-]
+import defs
 
-
-
-
-
-
-cohortorder = [k['material'] for k in cohortmap] #control of cohorts for graphics
 def read_data(filepath=r'C:\Data\Code\SewerReport\data\sewers_active.csv',
-                dbconnection=None, sql_query=None, group_materials=True):
-
+                dbconnection=None, sql_query=None, group_materials=True, unique_id_col = 'OBJECTID'):
+    """
+    convenience function for reading an sql query or csv into dataframe. Note,
+    group_materials changes the data labels according to defs.cohortmap
+    """
     if dbconnection and sql_query:
         #access the database directly
-        sewers = pd.read_sql_query(sql_query, dbconnection)
+        sewers = pd.read_sql_query(sql_query, dbconnection, index_col=unique_id_col)
     else:
         sewers = pd.read_csv(filepath) #local csv data
 
@@ -39,7 +20,7 @@ def read_data(filepath=r'C:\Data\Code\SewerReport\data\sewers_active.csv',
 
     return sewers
 
-def group_materials_from_abbreviations(sewerdf, cohortmap=cohortmap):
+def group_materials_from_abbreviations(sewerdf, cohortmap=defs.cohortmap):
 
     #first check to see if we should add materials not in my list
     #should not add anything if we've comprehensively defined everything
@@ -56,7 +37,10 @@ def group_materials_from_abbreviations(sewerdf, cohortmap=cohortmap):
         sewerdf.Material.replace(cohort['abbrevs'], cohort['material'], inplace=True)
 
 def average_sewer_age(sewerdf, snapshot_date=None):
-
+    """
+    caculates the length-weighted average age of the assets in the input dataset.
+    Snapshot dates allows the returned age to be at a given point in time.
+    """
     if not snapshot_date:
         snapshot_date = datetime.now()
 
@@ -69,37 +53,26 @@ def average_sewer_age(sewerdf, snapshot_date=None):
         weighted_avg = (subset_ages * subset_sewers.Length).sum() / subset_length
 
         return weighted_avg
+
     else:
         return 0
 
-#CURRENT GOAL - Trends: show age of subsets of pipe cohorts, flask url variable
 
-def material_type_barchart (sewerdf, chart_title=None, plot=False):
-    if len(sewerdf.index) == 0:
-        return None
-
-    df = sewerdf[['Length',  'Material']]
-    #df = df.pivot_table(index=['Material'], columns='PIPE_TYPE',
-    #                                        aggfunc= lambda x: sum(x)/5280)
-    df = df.groupby('Material').sum()/5280
-    #df.columns = df.columns.droplevel()
-    df = df.fillna(0)
-
-    return barchart(df, title=chart_title, x_labels=None)
-
-def annual_sewer_investment(sewerdf, chart_title=None, decade=False,
-                            html=False, plot=False, drange=[1820, 2020],
-                            indexcol='Year'):
-    #aggregates milage per year
+def annual_asset_investment(sewerdf, decade=False, drange=[1820, 2020],
+                            indexcol='Year', cohort_col='Material'):
+    """
+    the takes the entire asset data set and returns the total mileage per install year
+    (or whatever the indexcol param is set to), with seprate columns for each cohort.
+    """
 
     if len(sewerdf.index) == 0:
         return None
 
-    sewers = sewerdf[[indexcol, 'Material', 'Length']]
+    sewers = sewerdf[[indexcol, cohort_col, 'Length']]
 
     #split the data into a table with cols for each material
     #index = Year and aggfunc = sum aggregates sewer length per year
-    df = sewers.pivot_table(index=[indexcol], columns='Material',
+    df = sewers.pivot_table(index=[indexcol], columns=cohort_col,
                                             aggfunc= lambda x: sum(x))
     #remove the multi-level 'header?', or something
     df.columns = df.columns.droplevel()
@@ -114,111 +87,7 @@ def annual_sewer_investment(sewerdf, chart_title=None, decade=False,
 
     output = (df/5280)#.round(3) #convert to miles, round to 0.1
 
-    if html:
-        output = output.to_html()
-    elif plot:
-
-        #create pygal stacked bar chart
-        bar_chart = pygal.StackedBar(width=800, height=500,
-                      legend_at_bottom=True, human_readable=True,
-                      title=chart_title,
-                      y_title='Sewer Miles'
-                      )
-
-        #clean up the x labels to be strings, and shorten format if numerous
-        if decade:
-            bar_chart.x_labels = [str(int(x)) for x in output.index]
-        else:
-            #truncats to the 10s year (e.g. '87, '99)
-            bar_chart.x_labels = ["'" + str(int(x))[2:] for x in output.index]
-
-        #populate the chart data
-        for cohort in output:
-            title = {
-                    'title':cohort,
-                    'xlink':{
-                        'href':APPLICATION_ROOT + url_for('historical', cohort=cohort),
-                        'target': '_top'
-                        }
-                    }
-
-            bar_chart.add(title, output[cohort])
-            bar_chart.value_formatter =  lambda x:"%.3f" % x if x < 1 else "%.1f" % x
-
-        output = bar_chart.render_data_uri()
-    return  output#convert to miles
-    #return sewers.groupby('Year').sum()/5280
-
-def barchart(df, title=None, x_labels=None, y_title = 'Sewer Miles', print_values=False, label=True ):
-
-    bar_chart = pygal.Bar(width=800, height=500,
-                  legend_at_bottom=True, human_readable=True,
-                  title=title,
-                  y_title='Sewer Miles',
-                  x_labels = x_labels,
-                  print_values=print_values
-                  )
-
-    for item, data in df.iterrows():
-        bar_chart.add(item, data)
-        #format numbers less than 1 to have more decimals
-        bar_chart.value_formatter =  lambda x:"%.3f" % x if x < 1 else "%.1f" % x
-
-    return bar_chart.render_data_uri()
-
-def piechart(df, title=None, print_values=True, label=True):
-    piechart = pygal.Bar(title=title, print_values=print_values, print_labels=label)
-    for cohort, data in df.iterrows():
-        piechart.add(cohort, data)
-        piechart.value_formatter =  lambda x:"%.3f" % x if x < 1 else "%.0f" % x
-
-    return piechart.render_data_uri()
-
-def sewer_distribution(sewerdf, plot=True):
-
-    #create a pie chart with total milage per cohort
-    sewers = sewerdf[['Material', 'Length']].dropna()
-    totals_df = (sewers.groupby('Material').sum()/5280)#.round(1)
-    output = totals_df.reindex(cohortorder)
-
-    if plot:
-        output = piechart(output, 'Active Sewer Distribution by Material (miles)')
-
-    return output
-
-def liner_distribution(sewerdf, plot=True):
-
-    #create a pie chart with total milage per cohort of sewer lined
-    liners = sewerdf[["Length", "Material", "LinerDate"]].dropna() #remove non lined
-    liners  = liners[["Length", "Material"]].dropna()
-    totals_df = (liners.groupby('Material').sum()/5280)#.round(1)#group_materials(liners)
-
-    output = totals_df
-    if plot:
-        output = piechart(totals_df, 'Sewer Lining Distribution by Lined Material (miles)')
-
-    return output
-
-def sewer_age_projection(sewerdf, trend_period, projected_year=2065):
-    """
-    given a sewer data frame, a sample period with which to base the project on
-    and a year in the future, and estimate of the expected average sewer age is
-    returned.
-    """
-    age_deriv_df = sewer_age_deriv(sewerdf, startyear=trend_period[0], endyear=trend_period[1])
-
-    avg_age_rate = age_deriv_df.AgeRate.mean()
-    period_end_age = age_deriv_df.loc[age_deriv_df.Year == trend_period[1]].Age
-    years_until_target = projected_year - trend_period[1]
-
-    projected_age = period_end_age + (years_until_target * avg_age_rate)
-
-    print 'Avg rate of aging between {} and {} = {}'.format(trend_period[0], trend_period[1], avg_age_rate)
-    print 'Assuming the avg age is {} in {}, the projected age in {} will be {}'.format(
-                period_end_age, trend_period[1], projected_year, projected_age
-            )
-
-    return projected_age
+    return  output
 
 
 
@@ -248,4 +117,16 @@ def sewer_age_overtime(sewerdf, since=1990):
 
     return years
 
-    #yearseries =
+def normpdf(x, mean, sd):
+    """
+    Normal Probability Distribution Function
+
+    return the probability based on a normal distribution
+    guassian curve, given the x value, mean, and standard deviation.
+    """
+    #this because i can't get scipy to install
+    var = float(sd)**2
+    pi = 3.1415926
+    denom = (2*pi*var)**.5
+    num = math.exp(-(float(x)-float(mean))**2/(2*var))
+    return num/denom

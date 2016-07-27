@@ -1,10 +1,12 @@
 import pandas as pd
-import sewer_report_utils as sru
-import projections as proj
+import utils as sru
+import defs
+import projections as fp
 from datetime import datetime
+import os
 
 
-def run_rr_simulation(sewer_df, annual_replacements, startdate):
+def run_rr_simulation(sewer_df, annual_replacements, startdate, results_dir = None):
 
     sewers = sewer_df[:]
     print 'Total Miles = {}'.format(sewers.Length.sum()/5280)
@@ -21,7 +23,13 @@ def run_rr_simulation(sewer_df, annual_replacements, startdate):
     res_columns = ['Year', 'AvgAge', 'AvgRemainingLife', 'MinRemainingLife', '75thPercRemLife', '25thPercRemLife', 'AvgAgeOfReplaced', 'OldestReplaced', 'CumulativeMiles']
     results_df = pd.DataFrame(columns=res_columns, data=None)
 
-    snapshots = {}
+    if results_dir:
+        xlpath = os.path.join(results_dir, '{}_{}.xlsx'.format(annual_replacements[0], startdate))
+        excelwriter = pd.ExcelWriter(xlpath)
+        #save the initial data set to the first sheet
+        sewers.sort_values('RemainingLife').to_excel(excelwriter, 'existing_assets')
+
+    #snapshots = {}
     date = startdate
     cumulative_miles = 0.0
     for miles in annual_replacements:
@@ -46,19 +54,29 @@ def run_rr_simulation(sewer_df, annual_replacements, startdate):
         res = [date, avg_age, avg_rem_life, min_rem_life, percentile75, percentile25, avg_age_replaced, oldestreplaced, cumulative_miles]
         results_df = results_df.append(pd.DataFrame(columns = res_columns, data = [res]))
 
+        if results_dir:
+            #save a snapshot of the data if a results_dir is provided
+            # fname = os.path.join(results_dir, '{}.csv'.format(date))
+            # sewers.to_csv(fname)
+            sheetname = '{}'.format(date)
+            sewers.sort_values('RemainingLife').to_excel(excelwriter, sheetname)
+
         #increment the year that is currently being modeled and age each sewer segment
         date += 1
         sewers['RemainingLife'] = sewers['RemainingLife'] - 1
         cumulative_miles += repl.Length.sum() / 5280.0
 
 
+    #compute the rate of aging (of the weighted average age of whole system)
+    results_df['AgeRate'] = results_df['AvgAge'].diff()
+    excelwriter.save()
 
-    return {'results':results_df, 'snapshots':snapshots, 'sewersfinal':sewers}
+    return results_df.set_index('Year')
 
 
 def remaining_life_span(asset, replacement_year):
 
-    lifespan = proj.lifespans.get(asset.Material, 150) #assume 150 if not found
+    lifespan = defs.lifespans.get(asset.Material, 150) #assume 150 if not found
     age = replacement_year - asset.Year
     remaininglife = lifespan - age
 
@@ -102,10 +120,11 @@ def apply_replacements(orig_sewers, replaced_sewers, replacement_year):
     #create replacement sewer data
     def replace_asset(asset, replacement_year):
 
-        asset.Material = 'Concrete'
-        asset.RemainingLife = proj.lifespans[asset.Material]
+        asset.Material = 'NEWConcrete'
+        asset.RemainingLife = defs.lifespans[asset.Material]
         asset.Year = replacement_year
         asset.LinerDate = None
+        asset.MonthDay_Installed = '1_1'
         return asset
 
     #data will now reflect a new asset (new install date, modern material, etc)

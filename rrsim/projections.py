@@ -1,9 +1,7 @@
 import pandas as pd
-import sewer_report_utils as sru
+import utils as sru
 import math
 
-lifespans = {'Brick':150, 'Concrete':150, 'Clay':150, 'Metal':150, 'Polymer':150, 'Unkown/Other':150}
-lifespan_std = {'Brick':10, 'Concrete':10, 'Clay':10, 'Metal':10, 'Polymer':10, 'Unkown/Other':10}
 
 def project_failure_from_investment_profile(investment_prof):
 
@@ -55,23 +53,32 @@ def normdist_failures_from_year(installyear, cohort, miles_installed):
     #compute probability distribution function (normal dist) multiplied by the
     #miles installed. failyear here is analogous to the mean.
     df[key] = df.apply(
-                        lambda x: normpdf(x['Year'], failyear, std)*miles_installed,
+                        lambda x: sru.normpdf(x['Year'], failyear, std)*miles_installed,
                         axis=1
                         )
 
     return df.set_index(['Year'])
 
 
-def normpdf(x, mean, sd):
-    """
-    Normal Probability Distribution Function
 
-    return the probability based on a normal distribution
-    guassian curve, given the x value, mean, and standard deviation.
+
+def sewer_age_projection(sewerdf, trend_period, projected_year=2065):
     """
-    #this because i can't get scipy to install
-    var = float(sd)**2
-    pi = 3.1415926
-    denom = (2*pi*var)**.5
-    num = math.exp(-(float(x)-float(mean))**2/(2*var))
-    return num/denom
+    given a sewer data frame, a sample period with which to base the project on
+    and a year in the future, and estimate of the expected average sewer age is
+    returned.
+    """
+    age_deriv_df = sewer_age_deriv(sewerdf, startyear=trend_period[0], endyear=trend_period[1])
+
+    avg_age_rate = age_deriv_df.AgeRate.mean()
+    period_end_age = age_deriv_df.loc[age_deriv_df.Year == trend_period[1]].Age
+    years_until_target = projected_year - trend_period[1]
+
+    projected_age = period_end_age + (years_until_target * avg_age_rate)
+
+    print 'Avg rate of aging between {} and {} = {}'.format(trend_period[0], trend_period[1], avg_age_rate)
+    print 'Assuming the avg age is {} in {}, the projected age in {} will be {}'.format(
+                period_end_age, trend_period[1], projected_year, projected_age
+            )
+
+    return projected_age
