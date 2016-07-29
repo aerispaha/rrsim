@@ -20,7 +20,10 @@ def run_rr_simulation(sewer_df, annual_replacements, startdate, results_dir = No
 
     #sewers['Year'] = sewers.Year.replace( [9952., 9973., 9974., 9983., 9999.], 1900)
     #create Dataframe to hold result for each year
-    res_columns = ['Year', 'AvgAge', 'AvgRemainingLife', 'MinRemainingLife', '75thPercRemLife', '25thPercRemLife', 'AvgAgeOfReplaced', 'OldestReplaced', 'CumulativeMiles']
+    res_columns = ['Year', 'AvgAge', 'AvgRemainingLife', 'MinRemainingLife',
+                    '75thPercRemLife', '25thPercRemLife', 'AvgAgeOfReplaced',
+                    'CumulativeMiles']
+    
     results_df = pd.DataFrame(columns=res_columns, data=None)
 
     if results_dir:
@@ -33,6 +36,13 @@ def run_rr_simulation(sewer_df, annual_replacements, startdate, results_dir = No
     date = startdate
     cumulative_miles = 0.0
     for miles in annual_replacements:
+
+        if results_dir:
+            #save a snapshot of the data if a results_dir is provided
+            # fname = os.path.join(results_dir, '{}.csv'.format(date))
+            # sewers.to_csv(fname)
+            sheetname = '{}'.format(date)
+            sewers.sort_values('RemainingLife').to_excel(excelwriter, sheetname)
 
         #measure this years stats before making improvements
         avg_age = sru.average_sewer_age(sewers, datetime(date,1,1))
@@ -51,15 +61,8 @@ def run_rr_simulation(sewer_df, annual_replacements, startdate, results_dir = No
         oldestreplaced = repl.Year.min()
 
         #compute and record this year's results
-        res = [date, avg_age, avg_rem_life, min_rem_life, percentile75, percentile25, avg_age_replaced, oldestreplaced, cumulative_miles]
+        res = [date, avg_age, avg_rem_life, min_rem_life, percentile75, percentile25, avg_age_replaced, cumulative_miles]
         results_df = results_df.append(pd.DataFrame(columns = res_columns, data = [res]))
-
-        if results_dir:
-            #save a snapshot of the data if a results_dir is provided
-            # fname = os.path.join(results_dir, '{}.csv'.format(date))
-            # sewers.to_csv(fname)
-            sheetname = '{}'.format(date)
-            sewers.sort_values('RemainingLife').to_excel(excelwriter, sheetname)
 
         #increment the year that is currently being modeled and age each sewer segment
         date += 1
