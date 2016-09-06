@@ -79,7 +79,7 @@ def annual_asset_investment(sewerdf, decade=False, drange=[1820, 2020],
     df = df.fillna(0) #so things add properly
     df = df.loc[(df.index >= drange[0]) & (df.index <= drange[1])]
     #reorders the cohorts to desired, list comp handles subsets of cohorts
-    df = df[[c for c in cohortorder if c in df.columns]]
+    df = df[[c for c in defs.cohortorder if c in df.columns]]
 
     if decade:
         #aggregate the data into totals per decade

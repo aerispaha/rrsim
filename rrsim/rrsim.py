@@ -6,13 +6,14 @@ from datetime import datetime
 import os
 
 
-def run_rr_simulation(sewer_df, annual_replacements, startdate, results_dir = None):
+def run_rr_simulation(sewer_df, annual_replacements, startdate, results_dir = None,
+                      return_snapshot=False):
 
     sewers = sewer_df[:]
-    print 'Total Miles = {}'.format(sewers.Length.sum()/5280)
 
     #prep data: assume that sewers with 9999 or UNK install year installed at 1900
-    sewers['Year'] = sewers.Year.fillna(1900)
+    #sewers['Year'] = sewers.Year.fillna(1900)
+    sewers.loc[pd.isnull(sewers.Year), 'Year'] = 1900
     sewers.loc[sewers.Year > 9000, 'Year'] = 1900
 
     #calculate the remaining useful years for each assets
@@ -23,7 +24,7 @@ def run_rr_simulation(sewer_df, annual_replacements, startdate, results_dir = No
     res_columns = ['Year', 'AvgAge', 'AvgRemainingLife', 'MinRemainingLife',
                     '75thPercRemLife', '25thPercRemLife', 'AvgAgeOfReplaced',
                     'CumulativeMiles']
-    
+
     results_df = pd.DataFrame(columns=res_columns, data=None)
 
     if results_dir:
@@ -72,9 +73,12 @@ def run_rr_simulation(sewer_df, annual_replacements, startdate, results_dir = No
 
     #compute the rate of aging (of the weighted average age of whole system)
     results_df['AgeRate'] = results_df['AvgAge'].diff()
-    excelwriter.save()
-
-    return results_df.set_index('Year')
+    if results_dir:
+        excelwriter.save()
+    if return_snapshot:
+        return sewers
+    else:
+        return results_df.set_index('Year')
 
 
 def remaining_life_span(asset, replacement_year):
