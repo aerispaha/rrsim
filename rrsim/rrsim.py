@@ -6,24 +6,34 @@ from datetime import datetime
 import os
 
 
-def run_rr_simulation(sewer_df, annual_replacements, startdate, results_dir = None,
-                      return_snapshot=False):
+def run_rr_simulation(sewer_df, annual_replacements, startdate,
+                      results_dir = None, return_snapshot=False, sample=None):
 
+    """
+    Given a dataframe of sewer segments (presumably from GIS/DataConv), simulate
+    a replacement program by replacing the oldest sewers up to a certain
+    annual replacement amount. A dataframe is returned by default including key
+    performance indicators related to the overall health of the sewer system at
+    each year in the future included in the simulation.
+    """
+
+    #copy the dataframe
     sewers = sewer_df[:]
+    if sample:
+        #scale the scope
+        sewers=sewers.sample(frac = sample)
+        annual_replacements = [sample * x for x in annual_replacements]
 
     #prep data: assume that sewers with 9999 or UNK install year installed at 1900
-    #sewers['Year'] = sewers.Year.fillna(1900)
     sewers.loc[pd.isnull(sewers.Year), 'Year'] = 1900
     sewers.loc[sewers.Year > 9000, 'Year'] = 1900
 
     #calculate the remaining useful years for each assets
     sewers['RemainingLife'] = sewers.apply(lambda x: remaining_life_span(x, startdate), axis=1)
 
-    #sewers['Year'] = sewers.Year.replace( [9952., 9973., 9974., 9983., 9999.], 1900)
     #create Dataframe to hold result for each year
-    res_columns = ['Year', 'AvgAge', 'AvgRemainingLife', 'MinRemainingLife',
-                    '75thPercRemLife', '25thPercRemLife', 'AvgAgeOfReplaced',
-                    'CumulativeMiles']
+    res_columns = ['Year', 'AvgAge', 'AvgRemainingLife', 'AvgAgeOfReplaced',
+                   'riskymiles', 'riskyfraction']
 
     results_df = pd.DataFrame(columns=res_columns, data=None)
 
@@ -37,19 +47,21 @@ def run_rr_simulation(sewer_df, annual_replacements, startdate, results_dir = No
     date = startdate
     cumulative_miles = 0.0
     for miles in annual_replacements:
+        #simulate the annual replacement milage in each year provided
 
         if results_dir:
             #save a snapshot of the data if a results_dir is provided
-            # fname = os.path.join(results_dir, '{}.csv'.format(date))
-            # sewers.to_csv(fname)
             sheetname = '{}'.format(date)
             sewers.sort_values('RemainingLife').to_excel(excelwriter, sheetname)
 
         #measure this years stats before making improvements
         avg_age = sru.average_sewer_age(sewers, datetime(date,1,1))
-        min_rem_life = sewers.RemainingLife.min()
-        percentile75 = sewers.RemainingLife.quantile(0.75)
-        percentile25 = sewers.RemainingLife.quantile(0.25)
+        # min_rem_life = sewers.RemainingLife.min()
+        # percentile75 = sewers.RemainingLife.quantile(0.75)
+        # percentile25 = sewers.RemainingLife.quantile(0.25)
+        riskymiles = sewers.loc[sewers.RemainingLife < 0, 'Length'].sum() / 5280.0
+        riskyfraction = sewers.loc[sewers.RemainingLife < 0, 'Length'].sum() / sewers.Length.sum()
+
         #length weighted avg remaining useful life
         avg_rem_life = (sewers.RemainingLife * sewers.Length).sum() / sewers.Length.sum()
 
@@ -62,7 +74,7 @@ def run_rr_simulation(sewer_df, annual_replacements, startdate, results_dir = No
         oldestreplaced = repl.Year.min()
 
         #compute and record this year's results
-        res = [date, avg_age, avg_rem_life, min_rem_life, percentile75, percentile25, avg_age_replaced, cumulative_miles]
+        res = [date, avg_age, avg_rem_life, avg_age_replaced, riskymiles, riskyfraction]
         results_df = results_df.append(pd.DataFrame(columns = res_columns, data = [res]))
 
         #increment the year that is currently being modeled and age each sewer segment

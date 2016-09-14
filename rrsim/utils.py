@@ -4,7 +4,8 @@ from datetime import datetime
 import defs
 
 def read_data(filepath=r'C:\Data\Code\SewerReport\data\sewers_active.csv',
-                dbconnection=None, sql_query=None, group_materials=True, unique_id_col = 'OBJECTID'):
+                dbconnection=None, sql_query=None, group_materials=True,
+                unique_id_col = 'OBJECTID'):
     """
     convenience function for reading an sql query or csv into dataframe. Note,
     group_materials changes the data labels according to defs.cohortmap
