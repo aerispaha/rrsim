@@ -1,5 +1,6 @@
 import pandas as pd
 import utils as sru
+import risk
 import defs
 import projections as fp
 from datetime import datetime
@@ -59,8 +60,9 @@ def run_rr_simulation(sewer_df, annual_replacements, startdate,
         # min_rem_life = sewers.RemainingLife.min()
         # percentile75 = sewers.RemainingLife.quantile(0.75)
         # percentile25 = sewers.RemainingLife.quantile(0.25)
-        riskymiles = sewers.loc[sewers.RemainingLife < 0, 'Length'].sum() / 5280.0
-        riskyfraction = sewers.loc[sewers.RemainingLife < 0, 'Length'].sum() / sewers.Length.sum()
+        riskyfraction = risk.high_risk_fraction(sewers)
+        riskymiles = riskyfraction * sewers.Length.sum() / 5280.0 #sewers.loc[sewers.RemainingLife < 0, 'Length'].sum() / 5280.0
+        #sewers.loc[sewers.RemainingLife < 0, 'Length'].sum() / sewers.Length.sum()
 
         #length weighted avg remaining useful life
         avg_rem_life = (sewers.RemainingLife * sewers.Length).sum() / sewers.Length.sum()
